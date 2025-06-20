@@ -29,8 +29,11 @@ typedef struct Message {
 Message message_queue[MAX_MESSAGES];
 int message_count = 0;
 
+pthread_mutex_t message_mutex = PTHREAD_MUTEX_INITIALIZER;
+
 // global tick count
 int global_tick = 0;
+volatile bool keep_running = true;
 
 void handle_message(Message *message, node* computers){
 
@@ -38,6 +41,16 @@ void handle_message(Message *message, node* computers){
 
     if (strcmp(type, "send") == 0) {
         send_message(computers, message->from_id, message->to_id, message->content);
+    } else if (strcmp(type, "show") == 0) {
+        show_inbox(computers, message->from_id);
+    } else if (strcmp(type, "crash") == 0) {
+        crash_node(computers, message->from_id);
+    } else if (strcmp(type, "restart") == 0) {
+        restart_node(computers, message->from_id);
+    } else if (strcmp(type, "clear") == 0) {
+        clear_node(computers, message->from_id);
+    } else if (strcmp(type, "status") == 0) {
+        status_node(computers, message->from_id);
     }
 
 }
@@ -50,8 +63,10 @@ void *tick_scheduler(void *arg) {
     int no_nodes = args->no_nodes;
 
 
-    while (1) {
+    while (keep_running) {
         usleep(10000);    // 1 tick = 10ms
+
+        pthread_mutex_lock(&message_mutex);
         global_tick++;
 
         for (int i = 0; i < message_count; i++) {
@@ -61,20 +76,32 @@ void *tick_scheduler(void *arg) {
                        global_tick, message_queue[i].from_id, message_queue[i].to_id,
                        message_queue[i].content);
 
-                handle_message(&message_queue[i], computers);
                 message_queue[i].delivered = true;
+                pthread_mutex_unlock(&message_mutex);
+
+                handle_message(&message_queue[i], computers);
 
                 printf(">> ");
                 fflush(stdout);
+
+                pthread_mutex_lock(&message_mutex);
             }
         }
+        
+        pthread_mutex_unlock(&message_mutex);
+
     }
+    
+    return NULL;
 }
 
 void add_to_msg_queue(int from_id, int to_id, const char *type, const char *msg) {
 
+    pthread_mutex_lock(&message_mutex);
+
     if (message_count >= MAX_MESSAGES) {
         printf("Message queue full!\n");
+        pthread_mutex_unlock(&message_mutex);
         return;
     }
 
@@ -92,6 +119,8 @@ void add_to_msg_queue(int from_id, int to_id, const char *type, const char *msg)
     new_message.delivered = false;
 
     message_queue[message_count++] = new_message;
+
+    pthread_mutex_unlock(&message_mutex);
 }
 
 int main() {
@@ -172,7 +201,10 @@ int main() {
                 printf("Usage: status <node_id>\n");
             }
         } else if (strcmp(input, "exit") == 0) {
+            keep_running = false;
+            pthread_join(tick_thread, NULL);
             free(computers);
+            pthread_mutex_destroy(&message_mutex);
             break;
 
         } else {

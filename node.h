@@ -17,6 +17,6 @@ void show_inbox(node *nodes, int node_id);
 void crash_node(node *nodes, int node_id);
 void restart_node(node *nodes, int node_id);
 void clear_node(node *nodes, int node_id);
-bool status_node(node *nodes, int node_id);
+void status_node(node *nodes, int node_id);
 
 #endif

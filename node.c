@@ -68,6 +68,6 @@ void clear_node(node *nodes, int node_id) {
     printf("Inbox of Node %d has been cleared.\n", node_id);
 }
 
-bool status_node(node *nodes, int node_id) {
-    return nodes[node_id].alive;
+void status_node(node *nodes, int node_id) {
+    nodes[node_id].alive ? printf("Alive\n") : printf("Crashed\n");
 }
