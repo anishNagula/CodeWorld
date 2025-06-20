@@ -11,6 +11,11 @@
 #include <pthread.h>
 #define MAX_MESSAGES 100
 
+typedef struct {
+    node *computers;
+    int no_nodes;
+} SchedulerArgs;
+
 // messages structue
 typedef struct Message {
     int from_id;
@@ -27,18 +32,24 @@ int message_count = 0;
 // global tick count
 int global_tick = 0;
 
-void handle_message(Message *message){
+void handle_message(Message *message, node* computers){
 
-    char type = message->type;
+    char *type = message->type;
 
     if (strcmp(type, "send") == 0) {
-        send_message()
+        send_message(computers, message->from_id, message->to_id, message->content);
     }
 
 }
 
 
 void *tick_scheduler(void *arg) {
+
+    SchedulerArgs *args = (SchedulerArgs *)arg;
+    node *computers = args->computers;
+    int no_nodes = args->no_nodes;
+
+
     while (1) {
         usleep(10000);    // 1 tick = 10ms
         global_tick++;
@@ -50,8 +61,11 @@ void *tick_scheduler(void *arg) {
                        global_tick, message_queue[i].from_id, message_queue[i].to_id,
                        message_queue[i].content);
 
-                handle_message(message_queue[i]);
+                handle_message(&message_queue[i], computers);
                 message_queue[i].delivered = true;
+
+                printf(">> ");
+                fflush(stdout);
             }
         }
     }
@@ -82,8 +96,7 @@ void add_to_msg_queue(int from_id, int to_id, const char *type, const char *msg)
 
 int main() {
 
-    pthread_t tick_thread;
-    pthread_create(&tick_thread, NULL, tick_scheduler, NULL);
+    
 
     int no_nodes;
     printf("Welcome to the simulation\nHow many nodes would you like to spawn: ");
@@ -95,6 +108,10 @@ int main() {
         perror("Memory Allocation failed.\n ");
         return 1;
     }
+
+    pthread_t tick_thread;
+    SchedulerArgs args = {computers, no_nodes};
+    pthread_create(&tick_thread, NULL, tick_scheduler, &args);
 
     for (int i = 0; i < no_nodes; i++) {
         computers[i].node_id = i;
@@ -155,6 +172,7 @@ int main() {
                 printf("Usage: status <node_id>\n");
             }
         } else if (strcmp(input, "exit") == 0) {
+            free(computers);
             break;
 
         } else {
