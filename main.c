@@ -27,7 +27,8 @@ typedef struct Message {
 } Message;
 
 Message message_queue[MAX_MESSAGES];
-int message_count = 0;
+int msg_in = 0;
+int msg_out = 0;
 
 pthread_mutex_t message_mutex = PTHREAD_MUTEX_INITIALIZER;
 
@@ -69,22 +70,24 @@ void *tick_scheduler(void *arg) {
         pthread_mutex_lock(&message_mutex);
         global_tick++;
 
-        for (int i = 0; i < message_count; i++) {
-            if (!message_queue[i].delivered && message_queue[i].scheduled_tick <= global_tick) {
-                // process message
+        while (msg_out != msg_in) {
+            Message *msg = &message_queue[msg_out];
+
+            if (!msg->delivered && msg->scheduled_tick <= global_tick) {
                 printf("[Tick %d] Delivering message from %d to %d: %s\n",
-                       global_tick, message_queue[i].from_id, message_queue[i].to_id,
-                       message_queue[i].content);
+                    global_tick, msg->from_id, msg->to_id, msg->content);
 
-                message_queue[i].delivered = true;
-                pthread_mutex_unlock(&message_mutex);
+                msg->delivered = true;
 
-                handle_message(&message_queue[i], computers);
-
+                pthread_mutex_unlock(&message_mutex);  // unlock before handling
+                handle_message(msg, computers);
                 printf(">> ");
                 fflush(stdout);
+                pthread_mutex_lock(&message_mutex);    // re-lock after handling
 
-                pthread_mutex_lock(&message_mutex);
+                msg_out = (msg_out + 1) % MAX_MESSAGES; // move pointer only after delivering
+            } else {
+                break; // message not ready yet
             }
         }
         
@@ -99,26 +102,29 @@ void add_to_msg_queue(int from_id, int to_id, const char *type, const char *msg)
 
     pthread_mutex_lock(&message_mutex);
 
-    if (message_count >= MAX_MESSAGES) {
+    int next_pos = (msg_in + 1) % MAX_MESSAGES;
+    if (next_pos == msg_out) {
         printf("Message queue full!\n");
         pthread_mutex_unlock(&message_mutex);
         return;
     }
 
-    Message new_message;
-    new_message.from_id = from_id;
-    new_message.to_id = to_id;
-    strncpy(new_message.type, type, sizeof(new_message.type) - 1);
-    new_message.type[sizeof(new_message.type) - 1] = '\0';
+    Message *new_message = &message_queue[msg_in];
+    new_message->from_id = from_id;
+    new_message->to_id = to_id;
+    strncpy(new_message->type, type, sizeof(new_message->type) - 1);
+    new_message->type[sizeof(new_message->type) - 1] = '\0';
+    
     if (msg)
-        strncpy(new_message.content, msg, sizeof(new_message.content) - 1);
+        strncpy(new_message->content, msg, sizeof(new_message->content) - 1);
     else
-        new_message.content[0] = '\0';  // empty content if msg is NULL
-    new_message.content[sizeof(new_message.content) - 1] = '\0';
-    new_message.scheduled_tick = global_tick;
-    new_message.delivered = false;
+        new_message->content[0] = '\0';  // empty content if msg is NULL
 
-    message_queue[message_count++] = new_message;
+    new_message->content[sizeof(new_message->content) - 1] = '\0';
+    new_message->scheduled_tick = global_tick;
+    new_message->delivered = false;
+
+    msg_in = next_pos;
 
     pthread_mutex_unlock(&message_mutex);
 }
